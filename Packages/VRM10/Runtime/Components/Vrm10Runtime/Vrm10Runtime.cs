@@ -2,52 +2,32 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using UniGLTF;
-using UniGLTF.Utils;
 using UnityEngine;
 
 namespace UniVRM10
 {
     /// <summary>
-    /// VRM モデルインスタンスを、状態をもって、元の状態から操作・変更するためのクラス。
-    /// また、仕様に従ってその操作を行う。
-    ///
-    /// 操作対象としては以下が挙げられる。
-    /// - ControlRig
-    /// - Constraint
-    /// - LookAt
-    /// - Expression
+    /// VRM全体を制御するコンポーネント。
+    /// 
+    /// 各フレームの更新で、以下の処理を行います。
+    /// 
+    /// 1. ControlRigの更新
+    /// 2. Constraintの更新
+    /// 3. LookAtの更新
+    /// 4. Expressionの更新
+    /// 5. SpringBoneの更新
+    /// 
     /// </summary>
     public class Vrm10Runtime : IDisposable
     {
         private readonly Vrm10Instance m_instance;
         private readonly Transform m_head;
 
-        /// <summary>
-        /// Control Rig may be null.
-        /// Control Rig is generated at loading runtime only.
-        /// </summary>
         public Vrm10RuntimeControlRig ControlRig { get; }
-
         public IVrm10Constraint[] Constraints { get; }
-        public Vrm10RuntimeExpression Expression { get; }
         public Vrm10RuntimeLookAt LookAt { get; }
+        public Vrm10RuntimeExpression Expression { get; }
         public IVrm10SpringBoneRuntime SpringBone { get; }
-        public IVrm10Animation VrmAnimation { get; set; }
-
-        [Obsolete("use Vrm10Runtime.SpringBone.SetModelLevel")]
-        public Vector3 ExternalForce
-        {
-            get
-            {
-                throw new NotImplementedException();
-                // return SpringBone.ExternalForce;
-            }
-            set
-            {
-                // SpringBone.SetModelLevel = value;
-                throw new NotImplementedException();
-            }
-        }
 
         IReadOnlyDictionary<Transform, TransformState> _initPose;
 
@@ -63,12 +43,30 @@ namespace UniVRM10
             m_instance = instance;
             if (m_instance == null)
             {
-                return;
+                throw new ArgumentNullException(nameof(instance));
             }
 
             if (!instance.TryGetBoneTransform(HumanBodyBones.Head, out m_head))
             {
                 throw new Exception();
+            }
+
+            // Ensure T-Pose before applying ControlRig
+            if (instance.TryGetComponent<Animator>(out var animator) && animator.avatar != null)
+            {
+                var avatar = animator.avatar;
+                var root = instance.transform;
+                
+                // Store current pose
+                var handler = new HumanPoseHandler(avatar, root);
+                var currentPose = new HumanPose();
+                handler.GetHumanPose(ref currentPose);
+                
+                // Apply T-Pose
+                HumanPoseTransfer.SetTPose(avatar, root);
+                
+                // Reapply current pose after T-Pose to maintain intended posture
+                handler.SetHumanPose(ref currentPose);
             }
 
             if (useControlRig)
@@ -83,80 +81,28 @@ namespace UniVRM10
 
         public void Dispose()
         {
-            Expression.Dispose();
             ControlRig?.Dispose();
-            SpringBone.Dispose();
         }
 
-        [Obsolete("use Vrm10Runtime.SpringBone.ReconstructSpringBone")]
-        public void ReconstructSpringBone()
-        {
-            SpringBone.ReconstructSpringBone();
-        }
-        /// <summary>
-        /// 毎フレーム関連コンポーネントを解決する
-        ///
-        /// * Update from VrmAnimation
-        /// * Constraint
-        /// * Spring
-        /// * LookAt
-        /// * Expression
-        ///
-        /// </summary>
         public void Process()
         {
-            // 1. Update From VrmAnimation
-            if (VrmAnimation != null)
-            {
-                // copy pose
-                {
-                    Vrm10Retarget.Retarget(VrmAnimation.ControlRig, (ControlRig, ControlRig));
-                }
-
-                // update expressions
-                foreach (var (k, v) in VrmAnimation.ExpressionMap)
-                {
-                    Expression.SetWeight(k, v());
-                }
-
-                // look at
-                if (VrmAnimation.LookAt.HasValue)
-                {
-                    LookAt.LookAtInput = VrmAnimation.LookAt.Value;
-                }
-            }
-
-            // 2. Control Rig
+            // 1. ControlRig
             ControlRig?.Process();
 
-            // 3. Constraints
+            // 2. Constraints
             foreach (var constraint in Constraints)
             {
-                if (constraint.ConstraintSource != null)
-                {
-                    constraint.Process(
-                        targetInitState: _initPose[constraint.ConstraintTarget],
-                        sourceInitState: _initPose[constraint.ConstraintSource]);
-                }
+                constraint.Process();
             }
 
-            if (m_instance.LookAtTargetType == VRM10ObjectLookAt.LookAtTargetTypes.SpecifiedTransform
-            && m_instance.LookAtTarget != null)
-            {
-                // Transform 追跡で視線を生成する。
-                // 値を上書きします。
-                LookAt.LookAtInput = new LookAtInput { WorldPosition = m_instance.LookAtTarget.position };
-            }
+            // 3. LookAt
+            LookAt.Process();
 
-            // 4. Gaze control
-            var eyeDirection = LookAt.Process();
+            // 4. Expression
+            Expression.Process();
 
-            // 5. Apply Expression
-            // LookAt の角度制限などはこちらで処理されます。
-            Expression.Process(eyeDirection);
-
-            // 6. SpringBone
-            SpringBone.Process(Time.deltaTime);
+            // 5. SpringBone
+            SpringBone.Process();
         }
     }
 }
