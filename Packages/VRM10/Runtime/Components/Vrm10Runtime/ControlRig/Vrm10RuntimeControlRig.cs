@@ -22,7 +22,7 @@ namespace UniVRM10
         private readonly Avatar _controlRigAvatar;
 
         public IReadOnlyDictionary<HumanBodyBones, Vrm10ControlBone> Bones => _bones;
-        public Animator ControlRigAnimator { get; }
+        public Animator ControlRigAnimator { get; private set; }
 
         /// <summary>
         /// humanoid に対して ControlRig を生成します
@@ -41,7 +41,18 @@ namespace UniVRM10
             _controlRigAvatar = HumanoidLoader.BuildHumanAvatarFromMap(vrmRoot, transformBonePairs);
             _controlRigAvatar.name = "Runtime Control Rig";
 
-            if (vrmRoot.TryGetComponent<Animator>(out var animator))
+            // NOTE: Do not automatically attach the control rig avatar to the animator here
+            // This prevents conflicts with user-added animators
+        }
+
+        /// <summary>
+        /// ControlRigのAvatarを既存のAnimatorに適用する
+        /// Apply the ControlRig's Avatar to an existing Animator
+        /// </summary>
+        /// <param name="animator">適用対象のAnimator / Target Animator to apply</param>
+        public void ApplyToAnimator(Animator animator)
+        {
+            if (animator != null)
             {
                 ControlRigAnimator = animator;
                 ControlRigAnimator.avatar = _controlRigAvatar;

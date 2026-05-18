@@ -72,6 +72,12 @@ namespace UniVRM10
             if (useControlRig)
             {
                 ControlRig = new Vrm10RuntimeControlRig(instance.Humanoid, m_instance.transform);
+                
+                // Apply control rig to existing animator if present
+                if (instance.TryGetComponent<Animator>(out var existingAnimator))
+                {
+                    ControlRig.ApplyToAnimator(existingAnimator);
+                }
             }
             Constraints = instance.GetComponentsInChildren<IVrm10Constraint>();
             LookAt = new Vrm10RuntimeLookAt(instance, instance.Humanoid, ControlRig);
