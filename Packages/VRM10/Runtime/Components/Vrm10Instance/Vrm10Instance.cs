@@ -204,6 +204,18 @@ namespace UniVRM10
             var _ = Runtime;
         }
 
+        void OnValidate()
+        {
+            // Animation Controllerが変更された場合にControlRigを再適用
+            if (TryGetComponent<Animator>(out var animator) && animator.runtimeAnimatorController != null)
+            {
+                if (Runtime != null && Runtime.ControlRig != null)
+                {
+                    Runtime.ControlRig.ApplyToAnimator(animator);
+                }
+            }
+        }
+
         private void Update()
         {
             if (UpdateType == UpdateTypes.Update)
